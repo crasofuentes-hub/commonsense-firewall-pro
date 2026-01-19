@@ -76,3 +76,13 @@ models/
 # OS
 .DS_Store
 Thumbs.db
+
+# backups
+*.bak
+*.bak-*
+*.bak_*
+# venv + caches
+.venv/
+__pycache__/
+.pytest_cache/
+
