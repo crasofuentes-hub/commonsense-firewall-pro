@@ -1,75 +1,65 @@
-# CommonSense Firewall Enterprise (CS Firewall Enterprise)
+# CommonSense Firewall Enterprise (CSFW Enterprise)
 
-Firewall semántico **determinista** y **offline-first** para analizar texto y detectar riesgos usando un grafo local tipo ConceptNet (SQLite).  
-Diseñado para operar sin depender de APIs externas (p. ej. cuando ConceptNet público está caído) y para ofrecer **auditabilidad** mediante trazas reproducibles.
+**Offline-first, deterministic semantic safety firewall** that inspects text (and/or declared entities) before it reaches an LLM, an agent runtime, or an OS/action layer.  
+It uses a **local ConceptNet-style knowledge graph** stored in **SQLite** to provide **explainable, reproducible risk decisions** without relying on external APIs (which can rate-limit, drift, or go down).
 
----
-
-## ¿Qué problema resuelve?
-
-Los sistemas basados en IA o en reglas suelen fallar por:
-- **Alucinaciones** o inferencias sin soporte (“bullshit”).
-- Falta de **auditoría** (no puedes justificar por qué se bloqueó o permitió).
-- Dependencia de **servicios externos** (rate limits, caídas HTTP 502, latencia).
-
-CS Firewall Enterprise aporta:
-- Base de conocimiento **local** (SQLite) con millones de aristas.
-- Evaluación de riesgo reproducible (misma entrada → misma salida).
-- Reglas “hard” + evidencia del grafo para explicación.
+> Status: **Working end-to-end** (local DB ingestion + CLI analyze + doctor).  
+> ConceptNet public API outages (HTTP 502) are handled by **offline ingestion from `assertions.tsv.gz`** (often shipped as `assertions.csv.gz` but actually TSV).
 
 ---
 
-## Garantías (estado actual)
+## Why this exists (Motivation)
 
-| Propiedad | Estado |
+Modern agent systems can fail in predictable ways:
+
+- **Non-deterministic recovery**: repeated runs yield different “fixes”.
+- **Unverifiable reasoning**: there’s no audit trail that ties the decision to evidence.
+- **External dependency fragility**: reliance on live knowledge APIs leads to downtime (e.g., ConceptNet 502), rate limits, or drift.
+- **Unsafe instruction pathways**: an agent can interpret a request as operational guidance and perform harmful steps.
+
+CSFW Enterprise aims to be the **semantic safety boundary** that:
+1. Runs **offline** against a local KB,
+2. Produces a **deterministic verdict** (`ALLOW`/`BLOCK`) + evidence,
+3. Is designed to integrate into a **fixpoint + hashed trace** pipeline for convergence and anti-loop guarantees (planned integration with `reflexive-dsha`).
+
+---
+
+## Key properties (Guarantees)
+
+| Capability | Current |
 |---|---|
-| Offline-first (DB local) | ✅ |
-| Determinismo operacional (misma entrada → misma salida) | ✅ (según CLI y pipeline actual) |
-| Explicabilidad (hallazgos con evidencia) | ✅ |
-| Ingest local desde ConceptNet `assertions.csv.gz` (TSV) | ✅ |
-| Indexado y deduplicación (`UNIQUE (start_uri, rel, end_uri)`) | ✅ |
-| CI / Formal verification | ⏳ (planificado) |
+| Offline-first local knowledge base (SQLite) | ✅ |
+| Deterministic operational behavior (same input → same output) | ✅ (current CLI pipeline) |
+| Explainable decisions with evidence | ✅ |
+| Hard-rule safety blocks for critical intents | ✅ |
+| High-volume offline ingestion from ConceptNet assertions dump | ✅ |
+| De-duplication at storage layer via UNIQUE triplet index | ✅ |
+| Formal proofs (Lean) for fixpoint termination/idempotence/trace soundness | ⏳ Planned / not yet ported here |
 
 ---
 
-## Arquitectura (alto nivel)
+## System overview (Architecture)
 
-**Entrada** (texto + entidades opcionales)  
-→ **Normalización / extracción de conceptos**  
-→ **Motor de reglas** (hard rules)  
-→ **Motor de grafo (SQLite)** (búsqueda de relaciones / caminos)  
-→ **Score de riesgo**  
-→ **Decisión**: `ALLOW` / `BLOCK`  
-→ **Salida JSON** con `findings` y explicación
+High-level flow:
 
-Componentes principales:
-- `config`: rutas y settings del sistema (DB local).
-- `graph`: acceso a SQLite + consultas.
-- `rules`: reglas deterministas de seguridad (p. ej. fuego/acelerantes/indoor).
-- `cli`: `doctor`, `analyze`, `ingest`.
+**Text + Entities**  
+→ (optional) entity normalization  
+→ **Hard Rules Engine** (fast, deterministic blocks)  
+→ **Graph Evidence Engine** (SQLite queries over `edges`)  
+→ Risk scoring  
+→ **Decision** (`ALLOW`/`BLOCK`)  
+→ **JSON report**: entities, findings, evidence, explanation
 
----
-
-## Requisitos
-
-- Windows / Linux / macOS
-- Python 3.11+ (recomendado: **venv**)
-- SQLite (incluido vía librería estándar de Python)
-- Disco: la DB puede ser grande (cientos de MB o más)
+Core components:
+- **Config / settings**: DB path, defaults.
+- **Graph repository**: SQLite-backed edge queries.
+- **Rules**: deterministic, “hard-stop” constraints (e.g., accelerant + indoors + ignition).
+- **CLI**:
+  - `doctor`: DB health check
+  - `analyze`: analyze text with declared entities
+  - `ingest`: import ConceptNet assertions dump into local DB
 
 ---
 
-## Instalación (Windows PowerShell)
+## Repository layout (typical)
 
-```powershell
-Set-Location C:\Users\servi\cs_firewall_enterprise
-
-# 1) Crear venv
-python -m venv .venv
-
-# 2) Activar venv
-.\.venv\Scripts\Activate.ps1
-
-# 3) Instalar el paquete (editable)
-python -m pip install -U pip
-python -m pip install -e .
